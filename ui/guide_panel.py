@@ -4,8 +4,9 @@ KiroNav Guide Panel
 Displays step-by-step instructions and todo lists.
 """
 
+import asyncio
+
 import flet as ft
-from typing import Optional
 
 
 class StepItem(ft.Container):
@@ -50,7 +51,7 @@ class StepItem(ft.Container):
                 ],
                 spacing=10,
             ),
-            padding=ft.padding.symmetric(vertical=5, horizontal=10),
+            padding=ft.Padding.symmetric(vertical=5, horizontal=10),
             border_radius=10,
             bgcolor=ft.Colors.with_opacity(0.1, ft.Colors.WHITE) if is_current else None,
         )
@@ -96,15 +97,26 @@ class GuidePanel(ft.Container):
         """
         self._title = ft.Text(
             "",
-            size=16,
+            size=15,
             color=ft.Colors.WHITE,
             weight=ft.FontWeight.BOLD,
+            max_lines=2,
+            overflow=ft.TextOverflow.ELLIPSIS,
         )
         
         self._progress_text = ft.Text(
             "",
             size=12,
             color=ft.Colors.with_opacity(0.7, ft.Colors.WHITE),
+        )
+        
+        # Shown under the step list, e.g. how to advance to the next step.
+        self._hint_text = ft.Text(
+            "",
+            size=11,
+            italic=True,
+            color=ft.Colors.with_opacity(0.6, ft.Colors.WHITE),
+            visible=False,
         )
         
         self._steps_list = ft.Column(
@@ -124,13 +136,15 @@ class GuidePanel(ft.Container):
                 controls=[
                     ft.Row(
                         controls=[
-                            self._title,
+                            ft.Container(content=self._title, expand=True),
                             self._progress_text,
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        vertical_alignment=ft.CrossAxisAlignment.START,
                     ),
                     ft.Divider(color=ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),
                     self._steps_list,
+                    self._hint_text,
                 ],
                 spacing=10,
                 expand=True,
@@ -146,15 +160,10 @@ class GuidePanel(ft.Container):
         self.opacity = 1
         self.update()
     
-    def hide(self):
-        """Hide the guide panel."""
+    async def hide(self):
+        """Fade out and hide the guide panel."""
         self.opacity = 0
-        import asyncio
-        asyncio.create_task(self._hide_after_delay())
-    
-    async def _hide_after_delay(self):
-        """Hide after animation."""
-        import asyncio
+        self.update()
         await asyncio.sleep(0.3)
         self.visible = False
         self.update()
@@ -205,26 +214,38 @@ class GuidePanel(ft.Container):
         
         self.show()
     
+    def set_progress_hint(self, hint: str):
+        """
+        Set the hint line under the step list.
+        
+        Args:
+            hint: Hint text; empty hides the line
+        """
+        self._hint_text.value = hint
+        self._hint_text.visible = bool(hint)
+        self.update()
+    
     def mark_step_completed(self, step_number: int):
         """Mark a step as completed."""
-        if step_number <= len(self._steps_list.controls):
-            step_item = self._steps_list.controls[step_number - 1]
-            step_item.mark_completed()
-            
-            # Mark next step as current
-            if step_number < len(self._steps_list.controls):
-                next_step = self._steps_list.controls[step_number]
-                next_step.mark_current()
-            
-            # Update progress
-            total = len(self._steps_list.controls)
-            self._progress_text.value = f"{step_number}/{total}"
-            self.update()
+        steps = [c for c in self._steps_list.controls if isinstance(c, StepItem)]
+        
+        if not 1 <= step_number <= len(steps):
+            return
+        
+        steps[step_number - 1].mark_completed()
+        
+        # Mark next step as current
+        if step_number < len(steps):
+            steps[step_number].mark_current()
+        
+        self._progress_text.value = f"{step_number}/{len(steps)}"
+        self.update()
     
     def show_completion(self, summary: str):
         """Show completion message."""
         self._title.value = "✅ ¡Completado!"
         self._progress_text.value = ""
+        self.set_progress_hint("")
         
         self._steps_list.controls.clear()
         self._steps_list.controls.append(
