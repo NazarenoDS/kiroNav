@@ -1,9 +1,10 @@
 """
 KiroNav Core Module
 
-Core functionality for screen capture, audio handling, and Gemini Live API.
+Screen capture and the Kiro CLI inference backend.
 """
 
-from .screen_capture import ScreenCapture, screen_capture
-from .audio_handler import AudioHandler, audio_handler
-from .gemini_live import GeminiLiveSession
+from .kiro_cli_backend import KiroCLIBackend
+from .screen_capture import ScreenCapture, ScreenCaptureError
+
+__all__ = ["KiroCLIBackend", "ScreenCapture", "ScreenCaptureError"]

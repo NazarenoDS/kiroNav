@@ -1,130 +1,214 @@
 """
 KiroNav Screen Capture Module
 
-Captures screen frames using mss and sends them to Gemini Live API.
+Captures screen frames and hands them to the AI backend as image files.
+
+Backend selection:
+- Wayland sessions use `grim`, because `mss` reads the Xwayland root window and
+  returns a uniform black frame under compositors like Hyprland/Sway.
+- Everything else falls back to `mss`.
 """
 
 import asyncio
-import io
 import base64
+import io
+import os
+import shutil
+import subprocess
+import tempfile
 from typing import Optional
 
-import mss
 import PIL.Image
+
+# Max width/height sent to the model. Keeps the request small enough to stay fast
+# while leaving UI text legible.
+MAX_DIMENSION = 1280
+JPEG_QUALITY = 75
+
+# A capture whose brightest pixel is below this is treated as a failed grab
+# (this is exactly the black-frame symptom mss produces on Wayland).
+BLACK_FRAME_THRESHOLD = 8
+
+
+class ScreenCaptureError(RuntimeError):
+    """Raised when the screen could not be captured."""
+
+
+def _is_wayland() -> bool:
+    """Detect a Wayland session."""
+    return bool(os.environ.get("WAYLAND_DISPLAY")) or (
+        os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+    )
 
 
 class ScreenCapture:
     """
-    Captures screen frames and converts them to JPEG for Gemini Live API.
-    
+    Captures the screen to an image file for the AI backend.
+
     Usage:
         capture = ScreenCapture()
-        frame = await capture.get_frame()
-        # frame is a dict with "mime_type" and "data" (base64 encoded JPEG)
+        path = await capture.save_frame("/tmp/shot.png")
     """
-    
+
     def __init__(self, fps: int = 1):
         """
         Initialize screen capture.
-        
+
         Args:
-            fps: Frames per second to capture (default: 1, Gemini max is 1)
+            fps: Frames per second used by stream_frames()
         """
         self.fps = fps
-        self.sct: Optional[mss.mss] = None
-        self._running = False
-    
-    def _init_sct(self):
-        """Initialize mss screen capture (must be called from thread)."""
-        if self.sct is None:
-            self.sct = mss.mss()
-    
-    def _capture_frame_sync(self) -> Optional[dict]:
+        self._sct = None
+        self._backend = self._detect_backend()
+        print(f"[ScreenCapture] Backend: {self._backend}")
+
+    @property
+    def backend(self) -> str:
+        """Name of the active capture backend."""
+        return self._backend
+
+    def _detect_backend(self) -> str:
+        """Pick the capture backend for the current session."""
+        if _is_wayland():
+            if shutil.which("grim"):
+                return "grim"
+            print(
+                "[ScreenCapture] WARNING: Wayland session without `grim`. "
+                "Falling back to mss, which usually captures a black screen here. "
+                "Install grim (e.g. `sudo pacman -S grim`)."
+            )
+        return "mss"
+
+    # ---------------------------------------------------------------- capture
+
+    def _capture_grim(self, path: str) -> None:
+        """Capture the screen with grim (Wayland)."""
+        result = subprocess.run(
+            ["grim", path],
+            capture_output=True,
+            timeout=15,
+        )
+        if result.returncode != 0:
+            raise ScreenCaptureError(
+                f"grim failed (exit {result.returncode}): {result.stderr.decode().strip()}"
+            )
+
+    def _capture_mss(self, path: str) -> None:
+        """Capture the screen with mss (X11 / Windows / macOS)."""
+        import mss
+
+        if self._sct is None:
+            self._sct = mss.mss()
+
+        monitor = self._sct.monitors[0]
+        shot = self._sct.grab(monitor)
+        PIL.Image.frombytes("RGB", shot.size, shot.rgb).save(path)
+
+    def _capture_sync(self, path: str) -> str:
         """
-        Capture a single screen frame synchronously.
-        
+        Capture the screen to `path`, downscaled and re-encoded.
+
         Returns:
-            dict with "mime_type" and "data" (base64 encoded JPEG),
-            or None if capture failed
+            The path the image was written to.
+
+        Raises:
+            ScreenCaptureError: capture failed or produced a black frame.
         """
-        self._init_sct()
-        
-        if self.sct is None:
-            return None
-        
+        raw_path = path + ".raw.png"
+
         try:
-            # Capture the entire screen (monitor 0)
-            monitor = self.sct.monitors[0]
-            screenshot = self.sct.grab(monitor)
-            
-            # Convert to PIL Image
-            img = PIL.Image.frombytes("RGB", screenshot.size, screenshot.rgb)
-            
-            # Resize to reduce bandwidth (max 1024px width)
-            img.thumbnail([1024, 1024])
-            
-            # Convert to JPEG
-            image_io = io.BytesIO()
-            img.save(image_io, format="JPEG", quality=70)
-            image_io.seek(0)
-            
-            # Encode to base64
-            image_bytes = image_io.read()
-            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-            
-            return {
-                "mime_type": "image/jpeg",
-                "data": image_b64
-            }
-            
-        except Exception as e:
-            print(f"[ScreenCapture] Error capturing frame: {e}")
-            return None
-    
+            if self._backend == "grim":
+                self._capture_grim(raw_path)
+            else:
+                self._capture_mss(raw_path)
+
+            img = PIL.Image.open(raw_path).convert("RGB")
+
+            # A uniformly black frame means the compositor refused the grab.
+            # Surfacing it is far better than sending the model a blank image
+            # and letting it hallucinate a UI.
+            if img.convert("L").getextrema()[1] < BLACK_FRAME_THRESHOLD:
+                raise ScreenCaptureError(
+                    f"Capture via '{self._backend}' returned a black frame. "
+                    "On Wayland this means the compositor blocked the grab."
+                )
+
+            img.thumbnail((MAX_DIMENSION, MAX_DIMENSION))
+            img.save(path, format="PNG", optimize=True)
+            return path
+
+        finally:
+            if os.path.exists(raw_path):
+                os.remove(raw_path)
+
+    # ------------------------------------------------------------------- api
+
+    async def save_frame(self, path: Optional[str] = None) -> str:
+        """
+        Capture the screen to a PNG file.
+
+        Args:
+            path: Destination path. Defaults to a temp file.
+
+        Returns:
+            Path to the written PNG.
+
+        Raises:
+            ScreenCaptureError: capture failed or produced a black frame.
+        """
+        if path is None:
+            path = os.path.join(tempfile.gettempdir(), "kironav_screenshot.png")
+        return await asyncio.to_thread(self._capture_sync, path)
+
     async def get_frame(self) -> Optional[dict]:
         """
-        Capture a single screen frame asynchronously.
-        
+        Capture a single frame as base64 JPEG.
+
         Returns:
-            dict with "mime_type" and "data" (base64 encoded JPEG),
-            or None if capture failed
+            dict with "mime_type" and "data", or None if capture failed.
         """
-        return await asyncio.to_thread(self._capture_frame_sync)
-    
+        try:
+            path = await self.save_frame()
+        except ScreenCaptureError as e:
+            print(f"[ScreenCapture] {e}")
+            return None
+
+        img = PIL.Image.open(path).convert("RGB")
+        buffer = io.BytesIO()
+        img.save(buffer, format="JPEG", quality=JPEG_QUALITY)
+
+        return {
+            "mime_type": "image/jpeg",
+            "data": base64.b64encode(buffer.getvalue()).decode("utf-8"),
+        }
+
     async def stream_frames(self, queue: asyncio.Queue, stop_event: asyncio.Event):
         """
-        Continuously capture screen frames and put them in a queue.
-        
+        Continuously capture frames into a queue, dropping stale frames.
+
         Args:
-            queue: asyncio.Queue to put frames into
-            stop_event: asyncio.Event to signal when to stop
+            queue: Queue to put frames into
+            stop_event: Event that stops the loop
         """
         interval = 1.0 / self.fps
-        
+
         while not stop_event.is_set():
             frame = await self.get_frame()
-            
+
             if frame is not None:
-                # Put frame in queue, drop oldest if full
                 try:
                     queue.put_nowait(frame)
                 except asyncio.QueueFull:
-                    # Drop oldest frame to keep queue fresh
                     try:
                         queue.get_nowait()
                     except asyncio.QueueEmpty:
                         pass
                     queue.put_nowait(frame)
-            
-            # Wait before next capture
+
             await asyncio.sleep(interval)
-    
+
     def cleanup(self):
-        """Clean up screen capture resources."""
-        if self.sct is not None:
-            self.sct.close()
-            self.sct = None
-
-
-# Singleton instance for easy access
-screen_capture = ScreenCapture()
+        """Release capture resources."""
+        if self._sct is not None:
+            self._sct.close()
+            self._sct = None
