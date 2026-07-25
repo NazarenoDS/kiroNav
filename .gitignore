@@ -30,6 +30,11 @@ Thumbs.db
 .env
 *.log
 notes/
+# kiro-cli conversation history used for --resume
+.kironav-session/
+# Local screen capture artifacts
+test_screenshot.png
+kironav_screenshot.png
 
 # Flet build
 build/

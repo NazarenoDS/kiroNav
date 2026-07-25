@@ -2,6 +2,9 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# NOTE: metadata, ruff and pytest configuration only. See the comment near
+# [project.optional-dependencies] about packaging.
+
 [project]
 name = "kiroNav"
 version = "0.1.0"
@@ -26,11 +29,10 @@ classifiers = [
 ]
 
 dependencies = [
-    "flet>=0.25.0",
-    "google-genai>=0.3.0",
+    "flet>=0.86.0",
     "mss>=9.0.0",
-    "pyaudio>=0.2.14",
     "Pillow>=10.0.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -38,12 +40,14 @@ dev = [
     "pytest>=7.0.0",
     "ruff>=0.1.0",
 ]
+# Legacy Gemini Live path, kept for reference but not imported by the app.
+legacy-gemini = [
+    "google-genai>=0.3.0",
+    "pyaudio>=0.2.14",
+]
 
-[project.scripts]
-kiroNav = "kiroNav.main:main"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src/kiroNav"]
+# KiroNav runs as an app (`python main.py`), not as an installed package,
+# so no wheel target or console script is declared here.
 
 [tool.ruff]
 line-length = 100

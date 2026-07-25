@@ -1,9 +1,20 @@
 # KiroNav - Core Dependencies
-flet>=0.25.0
-google-genai>=0.3.0
+flet>=0.86.0
 mss>=9.0.0
-pyaudio>=0.2.14
 Pillow>=10.0.0
+python-dotenv>=1.0.0
+
+# Wayland sessions also need `grim` from the system package manager,
+# because mss captures a black frame under Wayland compositors.
+#   Arch:   sudo pacman -S grim
+#   Debian: sudo apt install grim
+
+# AI inference runs through the Kiro CLI (`kiro-cli`), installed separately.
+
+# Legacy Gemini Live path (core/gemini_live.py, core/audio_handler.py).
+# Not imported by the app since the move to Kiro CLI.
+# google-genai>=0.3.0
+# pyaudio>=0.2.14
 
 # Dev Dependencies
 # pytest>=7.0.0
