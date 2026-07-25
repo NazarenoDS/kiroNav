@@ -1,237 +1,328 @@
 """
 KiroNav Kiro CLI Backend
 
-Uses Kiro CLI as the AI backend instead of Gemini Live API.
-Captures screen → saves as image → asks Kiro CLI → parses response.
+Uses Kiro CLI as the AI backend: capture screen -> ask kiro-cli -> parse guidance.
+
+Session continuity notes (measured against kiro-cli, not assumed):
+- `--resume-id <uuid>` does NOT create a session, so a fresh UUID silently loses
+  all context. Only `--resume` reliably continues the previous conversation from
+  the same working directory.
+- Because `--resume` is scoped per directory, KiroNav uses its own session
+  directory so it never picks up an unrelated conversation.
+- The CLI renders markdown, which strips the ``` fences off a fenced code block.
+  The parser therefore extracts the first balanced JSON object instead of
+  matching fences.
 """
 
 import asyncio
+import json
 import os
 import re
-import subprocess
-import tempfile
-from typing import Optional, Callable
+from dataclasses import dataclass, field
+from typing import Optional
+
+# Response text is followed by this banner, which marks the end of the answer.
+_END_BANNER = "All tools are now trusted"
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]")
+
+# Tool-progress chatter the CLI prints around the answer.
+_NOISE_PATTERNS = [
+    re.compile(r"^\s*Reading images:.*$", re.MULTILINE),
+    re.compile(r"^\s*\(using tool:.*?\)\s*$", re.MULTILINE),
+    re.compile(r"^\s*✓.*$", re.MULTILINE),
+    re.compile(r"^\s*-\s*Completed in.*$", re.MULTILINE),
+    re.compile(r"^\s*▸\s*Credits:.*$", re.MULTILINE),
+    re.compile(r"^\s*Agents can sometimes do unexpected things.*$", re.MULTILINE),
+    re.compile(r"^\s*Learn more at.*$", re.MULTILINE),
+    # Leading prompt markers, plus the bare "json" left over from a stripped fence.
+    re.compile(r"^\s*>\s*(json)?\s*$", re.MULTILINE),
+    re.compile(r"^\s*>\s*"),
+]
+
+DEFAULT_MODEL = "claude-haiku-4.5"
+DEFAULT_TIMEOUT = 120.0
+
+# Directory used only for KiroNav's own kiro-cli conversation, so `--resume`
+# never resumes the user's unrelated sessions in the project root.
+SESSION_DIR_NAME = ".kironav-session"
+
+
+@dataclass
+class GuideResponse:
+    """Parsed guidance returned by the model."""
+
+    summary: str = ""
+    steps: list[str] = field(default_factory=list)
+    done: bool = False
+    raw: str = ""
+    error: Optional[str] = None
+
+    @property
+    def ok(self) -> bool:
+        """True when the call succeeded."""
+        return self.error is None
+
+    def as_text(self) -> str:
+        """Human-readable rendering, used when there are no parsable steps."""
+        if self.error:
+            return self.error
+        if self.steps:
+            lines = [self.summary] if self.summary else []
+            lines += [f"{i}. {s}" for i, s in enumerate(self.steps, 1)]
+            return "\n".join(lines)
+        return self.summary or self.raw
 
 
 class KiroCLIBackend:
     """
     Backend that uses Kiro CLI for AI inference.
-    
+
     Flow:
-    1. Capture screen → save as PNG
-    2. Call kiro-cli with prompt + screenshot reference
-    3. Parse response
-    4. Return to UI
+    1. Screen is captured to a PNG by ScreenCapture
+    2. kiro-cli is asked about that PNG
+    3. The JSON answer is parsed into a GuideResponse
     """
-    
+
     def __init__(
         self,
-        model: str = "claude-haiku-4.5",
+        model: str = DEFAULT_MODEL,
         project_dir: Optional[str] = None,
+        timeout: float = DEFAULT_TIMEOUT,
     ):
         """
         Initialize Kiro CLI backend.
-        
+
         Args:
-            model: Kiro model to use (default: claude-haiku-4.5 for speed)
-            project_dir: Project directory for Kiro CLI context
+            model: Kiro model to use (haiku by default, for latency)
+            project_dir: Project root; the session directory is created inside it
+            timeout: Per-call timeout in seconds
         """
         self.model = model
+        self.timeout = timeout
         self.project_dir = project_dir or os.path.dirname(os.path.dirname(__file__))
-        self._tool_callbacks: dict[str, Callable] = {}
-    
-    def on_tool_call(self, tool_name: str, callback: Callable):
-        """Register tool callback."""
-        self._tool_callbacks[tool_name] = callback
-    
-    def _clean_response(self, raw_output: str) -> str:
-        """Extract clean response text from Kiro CLI output."""
-        # Remove ANSI escape codes
-        cleaned = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', raw_output)
-        cleaned = re.sub(r'\x1b\[[?][0-9]*[a-zA-Z]', '', cleaned)
-        
-        # Split on "> " to get response segments
-        parts = cleaned.split('> ')
-        
-        # Find the longest meaningful segment (actual response)
-        best = ""
-        for part in parts:
-            part = part.strip()
-            # Remove trailing noise
-            part = re.sub(r'All tools are now trusted.*', '', part, flags=re.DOTALL)
-            part = re.sub(r'▸?\s*Credits:.*', '', part, flags=re.DOTALL)
-            part = re.sub(r'Reading images:.*', '', part, flags=re.DOTALL)
-            part = re.sub(r'\(using tool:.*?\)', '', part)
-            part = re.sub(r'✓.*', '', part)
-            part = re.sub(r'- Completed in.*', '', part)
-            part = re.sub(r'Learn more at.*', '', part)
-            part = re.sub(r'Agents can.*risks\.?', '', part)
-            part = re.sub(r'\[.*?\]', '', part)
-            part = part.strip()
-            
-            if len(part) > len(best):
-                best = part
-        
-        return best if best else "No response received"
-    
-    async def ask_with_screenshot(
-        self,
-        prompt: str,
-        screenshot_path: str,
-        system_context: str = "",
-    ) -> str:
+        self.session_dir = os.path.join(self.project_dir, SESSION_DIR_NAME)
+        os.makedirs(self.session_dir, exist_ok=True)
+
+        # False until the first successful call; controls the --resume flag.
+        self._has_session = False
+
+    # -------------------------------------------------------------- lifecycle
+
+    def reset_session(self):
+        """Forget the current conversation so the next call starts fresh."""
+        self._has_session = False
+
+    @property
+    def has_session(self) -> bool:
+        """True when a conversation is already in progress."""
+        return self._has_session
+
+    # ---------------------------------------------------------------- parsing
+
+    @staticmethod
+    def _strip_ansi(text: str) -> str:
+        """Remove ANSI escape sequences."""
+        return _ANSI_RE.sub("", text)
+
+    @classmethod
+    def _clean_response(cls, raw_output: str) -> str:
         """
-        Send a prompt with a screenshot to Kiro CLI.
-        
-        Args:
-            prompt: The question/instruction
-            screenshot_path: Path to screenshot PNG
-            system_context: Optional system context
-            
-        Returns:
-            Response text
+        Extract the answer text from kiro-cli's terminal output.
+
+        Cuts at the trust banner that always follows the answer, then removes
+        tool-progress lines. Deliberately avoids guessing which chunk is longest.
         """
-        # Build the full prompt
-        full_prompt = prompt
-        if system_context:
-            full_prompt = f"{system_context}\n\nUser request: {prompt}"
-        
-        # Add screenshot reference
-        rel_path = os.path.relpath(screenshot_path, self.project_dir)
-        full_prompt += f"\n\nI'm looking at the screenshot in {rel_path}. Analyze it and respond."
-        
-        # Run Kiro CLI
+        text = cls._strip_ansi(raw_output)
+
+        end = text.find(_END_BANNER)
+        if end != -1:
+            text = text[:end]
+
+        for pattern in _NOISE_PATTERNS:
+            text = pattern.sub("", text)
+
+        return text.strip()
+
+    @staticmethod
+    def _extract_json(text: str) -> Optional[dict]:
+        """
+        Extract the first balanced JSON object from `text`.
+
+        Fence markers are unreliable because the CLI renders markdown and drops
+        them, so this scans braces while ignoring braces inside strings.
+        """
+        start = text.find("{")
+        if start == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escaped = False
+
+        for i, char in enumerate(text[start:], start):
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"':
+                in_string = True
+            elif char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        parsed = json.loads(text[start:i + 1])
+                    except json.JSONDecodeError:
+                        return None
+                    return parsed if isinstance(parsed, dict) else None
+
+        return None
+
+    @classmethod
+    def _parse(cls, cleaned: str) -> GuideResponse:
+        """Turn cleaned CLI output into a GuideResponse."""
+        data = cls._extract_json(cleaned)
+
+        if data is None:
+            # The model answered in prose. Keep it rather than dropping the turn.
+            return GuideResponse(summary=cleaned, raw=cleaned)
+
+        steps = [str(s).strip() for s in data.get("steps") or [] if str(s).strip()]
+
+        return GuideResponse(
+            summary=str(data.get("summary") or "").strip(),
+            steps=steps,
+            done=bool(data.get("done")),
+            raw=cleaned,
+        )
+
+    # ------------------------------------------------------------------ calls
+
+    def _build_command(self) -> list[str]:
+        """Build the kiro-cli command, resuming when a session already exists."""
         cmd = [
             "kiro-cli", "chat",
             "--no-interactive",
             "--trust-all-tools",
             "--model", self.model,
         ]
-        
+        if self._has_session:
+            cmd.append("--resume")
+        return cmd
+
+    async def _run(self, prompt: str) -> GuideResponse:
+        """
+        Run kiro-cli with `prompt` on stdin and parse the answer.
+
+        Args:
+            prompt: Full prompt text
+
+        Returns:
+            GuideResponse; `error` is set when the call failed.
+        """
+        cmd = self._build_command()
+
         try:
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                cwd=self.project_dir,
+                cwd=self.session_dir,
             )
-            
+        except FileNotFoundError:
+            return GuideResponse(
+                error="kiro-cli was not found. Install it and make sure it is on PATH."
+            )
+
+        try:
             stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=full_prompt.encode()),
-                timeout=60.0
+                process.communicate(input=prompt.encode()),
+                timeout=self.timeout,
             )
-            
-            raw_output = stdout.decode() + stderr.decode()
-            response = self._clean_response(raw_output)
-            
-            print(f"[KiroCLI] Response: {response[:100]}...")
-            return response
-            
         except asyncio.TimeoutError:
-            return "Error: Kiro CLI timed out"
-        except Exception as e:
-            return f"Error: {str(e)}"
-    
-    async def ask_text_only(
+            process.kill()
+            await process.wait()
+            return GuideResponse(
+                error=f"Kiro CLI timed out after {self.timeout:.0f}s. Try again."
+            )
+
+        raw_output = stdout.decode(errors="replace") + stderr.decode(errors="replace")
+        cleaned = self._clean_response(raw_output)
+
+        if not cleaned:
+            return GuideResponse(error="Kiro CLI returned an empty response.")
+
+        # Only mark the session as live once there is something to resume.
+        self._has_session = True
+
+        return self._parse(cleaned)
+
+    async def ask(
         self,
         prompt: str,
+        screenshot_path: Optional[str] = None,
         system_context: str = "",
-    ) -> str:
+    ) -> GuideResponse:
         """
-        Send a text-only prompt to Kiro CLI (no screenshot).
-        
+        Ask Kiro CLI for guidance, optionally about a screenshot.
+
         Args:
-            prompt: The question/instruction
-            system_context: Optional system context
-            
+            prompt: The user request
+            screenshot_path: Absolute path to a PNG of the current screen
+            system_context: System prompt; only sent on the first call, since
+                later calls resume the same conversation
+
         Returns:
-            Response text
+            Parsed GuideResponse
         """
-        full_prompt = prompt
-        if system_context:
-            full_prompt = f"{system_context}\n\nUser request: {prompt}"
-        
-        cmd = [
-            "kiro-cli", "chat",
-            "--no-interactive",
-            "--trust-all-tools",
-            "--model", self.model,
-        ]
-        
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=self.project_dir,
+        parts = []
+
+        if system_context and not self._has_session:
+            parts.append(system_context)
+
+        parts.append(f"User request: {prompt}")
+
+        if screenshot_path:
+            # An absolute path is used on purpose: it is verified to work with
+            # kiro-cli's image reader regardless of the working directory.
+            parts.append(
+                f"Screenshot of the user's current screen: {screenshot_path}\n"
+                "Read that image and base your answer on what is actually visible in it."
             )
-            
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(input=full_prompt.encode()),
-                timeout=60.0
-            )
-            
-            raw_output = stdout.decode() + stderr.decode()
-            return self._clean_response(raw_output)
-            
-        except asyncio.TimeoutError:
-            return "Error: Kiro CLI timed out"
-        except Exception as e:
-            return f"Error: {str(e)}"
-    
-    async def guide_step(
+
+        return await self._run("\n\n".join(parts))
+
+    async def next_step(
         self,
         screenshot_path: str,
         task: str,
         current_step: int,
         total_steps: int,
-    ) -> dict:
+    ) -> GuideResponse:
         """
-        Get guidance for a specific step with screenshot context.
-        
+        Ask for the next step of an in-progress task, using a fresh screenshot.
+
         Args:
-            screenshot_path: Current screen state
+            screenshot_path: Absolute path to a PNG of the current screen
             task: What the user is trying to do
-            current_step: Current step number
-            total_steps: Total steps
-            
+            current_step: Step the user just completed
+            total_steps: Total steps in the current guide
+
         Returns:
-            dict with instruction, highlights, and next_action
+            Parsed GuideResponse
         """
-        prompt = f"""I'm helping a user complete this task: {task}
-This is step {current_step} of {total_steps}.
-
-Look at the screenshot and tell me:
-1. What should the user do NEXT (one clear instruction)
-2. Where on screen they should look/click (describe location)
-3. After they do it, what's the sign that the step succeeded
-
-Format your response as:
-ACTION: [instruction]
-LOCATION: [where to look/click]
-SUCCESS_SIGN: [how to know it worked]"""
-        
-        response = await self.ask_with_screenshot(prompt, screenshot_path)
-        
-        # Parse structured response
-        result = {
-            "instruction": response,
-            "location": "",
-            "success_sign": "",
-        }
-        
-        for line in response.split('\n'):
-            if line.startswith('ACTION:'):
-                result["instruction"] = line.replace('ACTION:', '').strip()
-            elif line.startswith('LOCATION:'):
-                result["location"] = line.replace('LOCATION:', '').strip()
-            elif line.startswith('SUCCESS_SIGN:'):
-                result["success_sign"] = line.replace('SUCCESS_SIGN:', '').strip()
-        
-        return result
-
-
-# Singleton
-kiro_backend = KiroCLIBackend()
+        prompt = (
+            f"The user is working on: {task}\n"
+            f"They just completed step {current_step} of {total_steps}.\n"
+            "Look at the new screenshot and tell them what to do next. "
+            "If the task is finished, set \"done\" to true."
+        )
+        return await self.ask(prompt, screenshot_path=screenshot_path)
