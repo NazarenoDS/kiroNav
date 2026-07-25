@@ -1,0 +1,10 @@
+# KiroNav - Core Dependencies
+flet>=0.25.0
+google-genai>=0.3.0
+mss>=9.0.0
+pyaudio>=0.2.14
+Pillow>=10.0.0
+
+# Dev Dependencies
+# pytest>=7.0.0
+# ruff>=0.1.0
