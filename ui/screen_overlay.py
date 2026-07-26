@@ -1,8 +1,8 @@
 """
-KiroNav Screen Overlay — Floating popup hints at screen positions
+KiroNav Screen Overlay — Floating tooltip hints
 
-Shows styled popup tooltips at x,y screen coordinates.
-Each popup is a small frameless always-on-top window.
+Shows a tooltip with an arrow pointing toward the general area
+where the user should look. Not pixel-precise — just directional guidance.
 """
 
 import sys
@@ -13,134 +13,33 @@ if sys.platform != "win32":
     raise ImportError("screen_overlay is Windows-only")
 
 import tkinter as tk
+import tkinter.font as tkfont
 
-# Visual config
-POPUP_BG = "#1A1A2E"
-POPUP_BORDER_COLOR = "#00D9A3"  # Teal (ghost color)
-POPUP_FG = "#FFFFFF"
-POPUP_FONT_FAMILY = "Segoe UI"
-POPUP_FONT_SIZE = 11
-POPUP_ARROW_COLOR = "#00D9A3"
-
-
-class PopupWindow:
-    """A styled popup tooltip at a screen position."""
-
-    def __init__(self, root: tk.Tk, x_px: int, y_px: int, text: str):
-        self._win = tk.Toplevel(root)
-        self._win.overrideredirect(True)
-        self._win.attributes("-topmost", True)
-
-        # Outer frame (acts as border)
-        outer = tk.Frame(self._win, bg=POPUP_BORDER_COLOR, padx=2, pady=2)
-        outer.pack()
-
-        # Inner frame with content
-        inner = tk.Frame(outer, bg=POPUP_BG, padx=10, pady=6)
-        inner.pack()
-
-        # Icon + text
-        label = tk.Label(
-            inner,
-            text=f"👆 {text}",
-            font=(POPUP_FONT_FAMILY, POPUP_FONT_SIZE),
-            fg=POPUP_FG,
-            bg=POPUP_BG,
-        )
-        label.pack()
-
-        # Position: center above the target point
-        self._win.update_idletasks()
-        w = self._win.winfo_width()
-        h = self._win.winfo_height()
-        pos_x = x_px - w // 2
-        pos_y = y_px - h - 15  # Above the target
-
-        # Keep on screen
-        screen_w = root.winfo_screenwidth()
-        screen_h = root.winfo_screenheight()
-        pos_x = max(5, min(pos_x, screen_w - w - 5))
-        pos_y = max(5, min(pos_y, screen_h - h - 5))
-
-        self._win.geometry(f"+{pos_x}+{pos_y}")
-
-        # Fade in effect (start transparent, go opaque)
-        self._win.attributes("-alpha", 0.0)
-        self._fade_in(0.0)
-
-    def _fade_in(self, alpha: float):
-        """Animate fade in."""
-        if alpha < 0.95:
-            self._win.attributes("-alpha", alpha)
-            self._win.after(30, lambda: self._fade_in(alpha + 0.15))
-        else:
-            self._win.attributes("-alpha", 0.95)
-
-    def destroy(self):
-        try:
-            self._win.destroy()
-        except Exception:
-            pass
-
-
-class MarkerWindow:
-    """A pulsing ring marker at the exact target position."""
-
-    def __init__(self, root: tk.Tk, x_px: int, y_px: int):
-        self._win = tk.Toplevel(root)
-        self._win.overrideredirect(True)
-        self._win.attributes("-topmost", True)
-        self._win.attributes("-alpha", 0.85)
-
-        size = 40
-        canvas = tk.Canvas(
-            self._win, width=size, height=size,
-            bg="white", highlightthickness=0,
-        )
-        canvas.pack()
-
-        # Make white transparent
-        self._win.attributes("-transparentcolor", "white")
-
-        # Draw teal ring
-        pad = 4
-        canvas.create_oval(
-            pad, pad, size - pad, size - pad,
-            outline=POPUP_BORDER_COLOR, width=3,
-        )
-        # Center dot
-        cx, cy = size // 2, size // 2
-        canvas.create_oval(cx - 4, cy - 4, cx + 4, cy + 4, fill=POPUP_BORDER_COLOR, outline="")
-
-        # Position centered on target
-        pos_x = x_px - size // 2
-        pos_y = y_px - size // 2
-        self._win.geometry(f"{size}x{size}+{pos_x}+{pos_y}")
-
-    def destroy(self):
-        try:
-            self._win.destroy()
-        except Exception:
-            pass
+# Style
+BG_COLOR = "#1A1A2E"
+BORDER_COLOR = "#00D9A3"
+TEXT_COLOR = "#FFFFFF"
+ARROW_COLOR = "#00D9A3"
+FONT_FAMILY = "Segoe UI"
+FONT_SIZE = 12
 
 
 class ScreenOverlay:
     """
-    Manages popup hint windows at screen positions.
-
-    Runs a hidden Tkinter root in a background thread.
+    Shows a floating tooltip near the target area with a directional arrow.
+    Uses Tkinter Toplevel windows (no fullscreen, no click-through issues).
     """
 
     def __init__(self):
         self._root: Optional[tk.Tk] = None
         self._thread: Optional[threading.Thread] = None
         self._ready = threading.Event()
-        self._popups: list = []
+        self._tooltip: Optional[tk.Toplevel] = None
         self._screen_width = 0
         self._screen_height = 0
 
     def start(self):
-        """Start the overlay manager in a background thread."""
+        """Start the overlay manager."""
         if self._thread and self._thread.is_alive():
             return
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -148,7 +47,7 @@ class ScreenOverlay:
         self._ready.wait(timeout=3)
 
     def stop(self):
-        """Stop and close all popups."""
+        """Stop overlay."""
         self.clear_popups()
         if self._root:
             try:
@@ -157,22 +56,30 @@ class ScreenOverlay:
                 pass
 
     def _run(self):
-        """Tkinter main loop (hidden root, only Toplevels are visible)."""
+        """Hidden Tkinter root in background thread."""
+        # Enable DPI awareness so coordinates match the real screen resolution
+        try:
+            import ctypes
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            pass
+
         self._root = tk.Tk()
         self._root.withdraw()
         self._screen_width = self._root.winfo_screenwidth()
         self._screen_height = self._root.winfo_screenheight()
+        print(f"[Overlay] Screen: {self._screen_width}x{self._screen_height}")
         self._ready.set()
         self._root.mainloop()
 
-    def show_popup(self, x: float, y: float, text: str, color: str = POPUP_BG):
+    def show_popup(self, x: float, y: float, text: str, color: str = BG_COLOR):
         """
-        Show a popup label at normalized coordinates.
+        Show a tooltip near the target area.
 
         Args:
-            x: Horizontal position (0.0=left, 1.0=right)
-            y: Vertical position (0.0=top, 1.0=bottom)
-            text: Label text
+            x: Approximate horizontal zone (0.0=left, 1.0=right)
+            y: Approximate vertical zone (0.0=top, 1.0=bottom)
+            text: Short label
         """
         if not self._root:
             return
@@ -181,35 +88,79 @@ class ScreenOverlay:
         py = int(y * self._screen_height)
 
         def _create():
-            popup = PopupWindow(self._root, px, py, text)
-            self._popups.append(popup)
+            self._destroy_tooltip()
+
+            tip = tk.Toplevel(self._root)
+            tip.overrideredirect(True)
+            tip.attributes("-topmost", True)
+            tip.attributes("-alpha", 0.92)
+            tip.configure(bg=BORDER_COLOR)
+
+            # Main frame (border effect via padding)
+            frame = tk.Frame(tip, bg=BG_COLOR, padx=12, pady=8)
+            frame.pack(padx=2, pady=2)
+
+            # Arrow character + text
+            arrow_char = self._get_arrow_char(y)
+            display_text = f"{arrow_char}  {text}"
+
+            label = tk.Label(
+                frame,
+                text=display_text,
+                font=(FONT_FAMILY, FONT_SIZE),
+                fg=TEXT_COLOR,
+                bg=BG_COLOR,
+            )
+            label.pack()
+
+            # Position the tooltip OFFSET from target (not on top of it)
+            tip.update_idletasks()
+            w = tip.winfo_width()
+            h = tip.winfo_height()
+
+            # Place tooltip offset: above if target is low, below if high
+            if y > 0.7:
+                # Target is near bottom — show tooltip above
+                pos_y = py - h - 40
+            else:
+                # Target is elsewhere — show tooltip below
+                pos_y = py + 30
+
+            # Horizontal: center on x but keep on screen
+            pos_x = px - w // 2
+            pos_x = max(10, min(pos_x, self._screen_width - w - 10))
+            pos_y = max(10, min(pos_y, self._screen_height - h - 10))
+
+            tip.geometry(f"+{pos_x}+{pos_y}")
+            self._tooltip = tip
 
         self._root.after(0, _create)
 
-    def show_arrow(self, x: float, y: float, color: str = POPUP_ARROW_COLOR):
-        """
-        Show a marker ring at the target position.
-        """
-        if not self._root:
-            return
-
-        px = int(x * self._screen_width)
-        py = int(y * self._screen_height)
-
-        def _create():
-            marker = MarkerWindow(self._root, px, py)
-            self._popups.append(marker)
-
-        self._root.after(0, _create)
+    def show_arrow(self, x: float, y: float, color: str = ARROW_COLOR):
+        """No-op — the tooltip already has directional arrows."""
+        pass
 
     def clear_popups(self):
-        """Remove all active popups."""
+        """Remove the active tooltip."""
         if not self._root:
             return
+        self._root.after(0, self._destroy_tooltip)
 
-        def _clear():
-            for popup in self._popups:
-                popup.destroy()
-            self._popups.clear()
+    def _destroy_tooltip(self):
+        """Destroy current tooltip if any."""
+        if self._tooltip:
+            try:
+                self._tooltip.destroy()
+            except Exception:
+                pass
+            self._tooltip = None
 
-        self._root.after(0, _clear)
+    @staticmethod
+    def _get_arrow_char(y: float) -> str:
+        """Get a directional arrow based on vertical position."""
+        if y > 0.8:
+            return "👇"  # pointing down (target is below)
+        elif y < 0.2:
+            return "👆"  # pointing up (target is above)
+        else:
+            return "👉"  # pointing right (general)
