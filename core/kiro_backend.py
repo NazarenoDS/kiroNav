@@ -21,11 +21,21 @@ DEFAULT_TIMEOUT = 60.0
 
 
 @dataclass
+class StepInfo:
+    """A single step with position info for the overlay."""
+
+    text: str = ""
+    x: float = 0.5
+    y: float = 0.5
+    label: str = ""
+
+
+@dataclass
 class GuideResponse:
     """Parsed guidance returned by the model."""
 
     summary: str = ""
-    steps: list[str] = field(default_factory=list)
+    steps: list[StepInfo] = field(default_factory=list)
     done: bool = False
     raw: str = ""
     error: Optional[str] = None
@@ -34,12 +44,17 @@ class GuideResponse:
     def ok(self) -> bool:
         return self.error is None
 
+    @property
+    def step_texts(self) -> list[str]:
+        """Just the text instructions (for the guide panel)."""
+        return [s.text for s in self.steps]
+
     def as_text(self) -> str:
         if self.error:
             return self.error
         if self.steps:
             lines = [self.summary] if self.summary else []
-            lines += [f"{i}. {s}" for i, s in enumerate(self.steps, 1)]
+            lines += [f"{i}. {s.text}" for i, s in enumerate(self.steps, 1)]
             return "\n".join(lines)
         return self.summary or self.raw
 
@@ -88,14 +103,27 @@ class KiroBackend:
     @staticmethod
     def _parse(text: str) -> GuideResponse:
         """Parse the model's JSON response into a GuideResponse."""
-        # Try to extract JSON from the response
         try:
-            # Find the first { and last } to extract JSON
             start = text.find("{")
             end = text.rfind("}")
             if start != -1 and end != -1 and end > start:
                 data = json.loads(text[start:end + 1])
-                steps = [str(s).strip() for s in data.get("steps") or [] if str(s).strip()]
+                raw_steps = data.get("steps") or []
+                steps = []
+                for s in raw_steps:
+                    if isinstance(s, dict):
+                        step_text = str(s.get("text") or "").strip()
+                        if step_text:
+                            steps.append(StepInfo(
+                                text=step_text,
+                                x=float(s.get("x", 0.5)),
+                                y=float(s.get("y", 0.5)),
+                                label=str(s.get("label") or "").strip(),
+                            ))
+                    elif isinstance(s, str) and s.strip():
+                        # Fallback: plain string step (no coordinates)
+                        steps.append(StepInfo(text=s.strip()))
+
                 return GuideResponse(
                     summary=str(data.get("summary") or "").strip(),
                     steps=steps,
@@ -105,7 +133,6 @@ class KiroBackend:
         except (json.JSONDecodeError, ValueError):
             pass
 
-        # Fallback: treat the whole response as prose
         return GuideResponse(summary=text.strip(), raw=text)
 
     async def ask(
@@ -209,3 +236,27 @@ class KiroBackend:
             'If the task is finished, set "done" to true.'
         )
         return await self.ask(prompt, screenshot_path=screenshot_path)
+
+    async def check_step_done(
+        self,
+        screenshot_path: str,
+        step_text: str,
+    ) -> bool:
+        """
+        Check if the user completed a specific step by looking at a fresh screenshot.
+
+        Args:
+            screenshot_path: Path to the current screen PNG
+            step_text: The instruction that was given
+
+        Returns:
+            True if the step appears to be done
+        """
+        prompt = (
+            f'The last instruction was: "{step_text}"\n'
+            "Look at the new screenshot. Did the user complete this step? "
+            "(Did the screen change in a way that shows they did it?)\n"
+            'Reply with JSON: {"summary": "your assessment", "steps": [], "done": true/false}'
+        )
+        response = await self.ask(prompt, screenshot_path=screenshot_path)
+        return response.done

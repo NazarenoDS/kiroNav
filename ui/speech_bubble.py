@@ -92,7 +92,7 @@ class SpeechBubble(ft.Container):
                 tight=True,
             ),
             visible=False,
-            max_height=200,
+            height=180,
         )
 
         # Loading indicator

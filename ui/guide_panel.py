@@ -124,7 +124,6 @@ class GuidePanel(ft.Container):
         
         super().__init__(
             width=width,
-            max_height=300,
             bgcolor=ft.Colors.with_opacity(0.9, "#1A1A2E"),
             border_radius=15,
             border=ft.Border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),

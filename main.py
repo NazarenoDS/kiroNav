@@ -4,6 +4,7 @@ KiroNav - Main Application
 AI-powered software navigation assistant using Kiro Gateway as backend.
 """
 
+import asyncio
 import os
 import tempfile
 from typing import Optional
@@ -11,8 +12,9 @@ from typing import Optional
 import flet as ft
 from dotenv import load_dotenv
 
-from core.kiro_backend import KiroBackend, GuideResponse
+from core.kiro_backend import KiroBackend, GuideResponse, StepInfo
 from core.screen_capture import ScreenCapture, ScreenCaptureError
+from core.watchdog import Watchdog
 from ui.ghost import Ghost, GhostState
 from ui.guide_panel import GuidePanel
 from ui.speech_bubble import SpeechBubble
@@ -23,13 +25,13 @@ PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 SYSTEM_PROMPT_PATH = os.path.join(PROMPTS_DIR, "kiro_system_prompt.txt")
 SCREENSHOT_PATH = os.path.join(tempfile.gettempdir(), "kironav_screenshot.png")
 
-# Floating widget size — fixed, always visible
+# Floating widget size
 WINDOW_WIDTH = 340
 WINDOW_HEIGHT = 460
 
 GHOST_SIZE = 100
 
-NEXT_STEP_HINT = "Click el fantasma para el siguiente paso"
+NEXT_STEP_HINT = "Click el fantasma o esperá que detecte tu avance"
 
 
 class KiroNavApp:
@@ -40,6 +42,8 @@ class KiroNavApp:
     - Ghost character (idle, watch, speak, happy)
     - Speech bubble (user input / AI output)
     - Guide panel (steps)
+    - Screen overlay (popups at x,y positions)
+    - Watchdog (auto-advance detection)
     - Kiro Gateway backend (AI inference via HTTP)
     """
 
@@ -56,13 +60,20 @@ class KiroNavApp:
 
         self.backend = KiroBackend(model=model, base_url=base_url, api_key=api_key)
         self.screen_capture = ScreenCapture()
+        self.watchdog = Watchdog(
+            on_step_done=self._on_watchdog_step_done,
+            on_stuck=self._on_watchdog_stuck,
+        )
+
+        # Overlay (initialized after page is ready)
+        self._overlay = None
 
         self._processing = False
         self._system_prompt = ""
 
         # Current guide state
         self._task = ""
-        self._steps: list[str] = []
+        self._steps: list[StepInfo] = []
         self._current_step = 0
 
     # ------------------------------------------------------------------ setup
@@ -88,6 +99,7 @@ class KiroNavApp:
                 self._system_prompt = f.read()
 
         self._setup_ui()
+        self._start_overlay()
 
         print(f"[KiroNav] Ready. Model: {self.backend.model}")
         print(f"[KiroNav] Capture backend: {self.screen_capture.backend}")
@@ -106,7 +118,7 @@ class KiroNavApp:
             tooltip="Click para interactuar",
         )
 
-        # Layout: ghost always visible at top-right, drag area to its left
+        # Ghost at top-right, drag area to its left
         ghost_row = ft.Row(
             controls=[
                 ft.WindowDragArea(
@@ -120,7 +132,7 @@ class KiroNavApp:
             spacing=0,
         )
 
-        # Content area: guide panel + speech bubble (scrollable if needed)
+        # Content area
         content_area = ft.Column(
             controls=[
                 self.guide_panel,
@@ -150,6 +162,20 @@ class KiroNavApp:
 
         self.ghost.pulse()
 
+    def _start_overlay(self):
+        """Start the screen overlay for popups."""
+        try:
+            from ui.screen_overlay import ScreenOverlay
+            self._overlay = ScreenOverlay()
+            self._overlay.start()
+            print("[KiroNav] Screen overlay started")
+        except ImportError:
+            print("[KiroNav] Screen overlay not available (Windows only)")
+            self._overlay = None
+        except Exception as e:
+            print(f"[KiroNav] Overlay failed to start: {e}")
+            self._overlay = None
+
     # --------------------------------------------------------------- handlers
 
     async def _on_ghost_click(self, e):
@@ -157,8 +183,15 @@ class KiroNavApp:
         if self._processing:
             return
 
-        # If there are active steps, advance
+        # If guide panel shows completion, dismiss it
+        if self.guide_panel.visible and not self._steps:
+            await self.guide_panel.hide()
+            self.ghost.set_state(GhostState.IDLE)
+            return
+
+        # If there are active steps, advance manually
         if self._steps and self._current_step < len(self._steps):
+            self.watchdog.reset()
             await self._advance_step()
             return
 
@@ -192,7 +225,10 @@ class KiroNavApp:
             self._render_response(response)
 
     async def _advance_step(self):
-        """Mark the current step done and ask for the next one."""
+        """Mark the current step done and move forward."""
+        self.watchdog.stop()
+        self._clear_overlay()
+
         self.guide_panel.mark_step_completed(self._current_step + 1)
         self._current_step += 1
 
@@ -209,14 +245,76 @@ class KiroNavApp:
             if response is not None:
                 self._render_response(response)
         else:
+            self._show_current_step_overlay()
+            self._start_watchdog()
             self.guide_panel.set_progress_hint(NEXT_STEP_HINT)
+
+    # ------------------------------------------------------------ watchdog
+
+    async def _on_watchdog_step_done(self):
+        """Watchdog detected the step was completed."""
+        print("[KiroNav] Watchdog: step done detected!")
+        if self._steps and self._current_step < len(self._steps):
+            await self._advance_step()
+
+    async def _on_watchdog_stuck(self):
+        """Watchdog gave up — user is stuck or away. Offer help."""
+        print("[KiroNav] Watchdog: user appears stuck/away")
+        if self._steps and self._current_step < len(self._steps):
+            step_text = self._steps[self._current_step].text
+            self.speech_bubble.set_text(
+                f"¿Te trabaste? El paso era:\n\n\"{step_text}\"\n\n"
+                "Click el fantasma cuando quieras seguir."
+            )
+            self.speech_bubble.show()
+        self.ghost.set_state(GhostState.IDLE)
+
+    def _start_watchdog(self):
+        """Start the watchdog for the current step."""
+        if not self._steps or self._current_step >= len(self._steps):
+            return
+
+        current_step_text = self._steps[self._current_step].text
+        print(f"[KiroNav] Watchdog started for step: {current_step_text[:50]}...")
+
+        async def check_fn() -> bool:
+            """Capture screen and ask model if step was done."""
+            try:
+                print("[Watchdog] Checking if step was completed...")
+                path = await self.screen_capture.save_frame(SCREENSHOT_PATH)
+                result = await self.backend.check_step_done(path, current_step_text)
+                print(f"[Watchdog] Model says done={result}")
+                return result
+            except Exception as e:
+                print(f"[Watchdog] Check error: {e}")
+                return False
+
+        self.watchdog.start(check_fn)
+
+    # ---------------------------------------------------------------- overlay
+
+    def _show_current_step_overlay(self):
+        """Show a popup on the overlay for the current step."""
+        if not self._steps or self._current_step >= len(self._steps):
+            return
+
+        step = self._steps[self._current_step]
+        print(f"[KiroNav] Overlay: label='{step.label}' x={step.x} y={step.y} overlay={self._overlay is not None}")
+
+        if self._overlay and step.label:
+            self._overlay.clear_popups()
+            self._overlay.show_popup(step.x, step.y, step.label)
+            self._overlay.show_arrow(step.x, step.y)
+
+    def _clear_overlay(self):
+        """Remove all overlay popups."""
+        if self._overlay:
+            self._overlay.clear_popups()
 
     # ------------------------------------------------------------------ logic
 
     async def _ask(self, call) -> Optional[GuideResponse]:
-        """
-        Capture the screen, run the call, and handle failures.
-        """
+        """Capture the screen, run the call, and handle failures."""
         self._processing = True
         self.ghost.set_state(GhostState.WATCH)
         self.speech_bubble.set_loading()
@@ -251,7 +349,10 @@ class KiroNavApp:
             self.page.update()
 
     def _render_response(self, response: GuideResponse):
-        """Show a guide response in the panel."""
+        """Show a guide response in the panel and overlay."""
+        self.watchdog.stop()
+        self._clear_overlay()
+
         if response.done:
             self._reset_guide()
             self.ghost.set_state(GhostState.HAPPY)
@@ -269,14 +370,20 @@ class KiroNavApp:
 
         self.guide_panel.set_tutorial(
             title=response.summary or self._task,
-            steps=response.steps,
+            steps=response.step_texts,
         )
         self.guide_panel.set_progress_hint(NEXT_STEP_HINT)
         self.speech_bubble.set_ready()
         self.ghost.set_state(GhostState.WATCH)
 
+        # Show overlay for first step + start watchdog
+        self._show_current_step_overlay()
+        self._start_watchdog()
+
     def _reset_guide(self):
         """Clear the active guide state."""
+        self.watchdog.stop()
+        self._clear_overlay()
         self._steps = []
         self._current_step = 0
 
