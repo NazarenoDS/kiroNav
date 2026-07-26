@@ -85,15 +85,13 @@ class GuidePanel(ft.Container):
     
     def __init__(
         self,
-        width: int = 350,
-        max_height: int = 400,
+        width: int = 320,
     ):
         """
         Initialize guide panel.
-        
+
         Args:
             width: Panel width
-            max_height: Maximum panel height
         """
         self._title = ft.Text(
             "",
@@ -122,16 +120,15 @@ class GuidePanel(ft.Container):
         self._steps_list = ft.Column(
             spacing=5,
             scroll=ft.ScrollMode.AUTO,
-            expand=True,
         )
         
         super().__init__(
             width=width,
-            height=max_height,
+            max_height=300,
             bgcolor=ft.Colors.with_opacity(0.9, "#1A1A2E"),
             border_radius=15,
-            border=ft.border.Border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),
-            padding=15,
+            border=ft.Border.all(1, ft.Colors.with_opacity(0.2, ft.Colors.WHITE)),
+            padding=12,
             content=ft.Column(
                 controls=[
                     ft.Row(
@@ -146,8 +143,8 @@ class GuidePanel(ft.Container):
                     self._steps_list,
                     self._hint_text,
                 ],
-                spacing=10,
-                expand=True,
+                spacing=8,
+                tight=True,
             ),
             opacity=0,
             animate_opacity=300,

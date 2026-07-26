@@ -46,7 +46,9 @@ class Ghost(ft.Image):
         """
         self.size = size
         self._state = initial_state
-        self._asset_dir = os.path.join(os.path.dirname(__file__), "..", "assets", "ghost")
+        self._asset_dir = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "assets", "ghost")
+        )
         
         super().__init__(
             src=self._get_asset_path(initial_state),

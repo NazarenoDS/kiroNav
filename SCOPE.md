@@ -2,257 +2,93 @@
 
 ## Overview
 
-**KiroNav** is an AI-powered software navigation assistant that uses Gemini Live API to watch your screen in real-time and guide you step-by-step through any software task. A friendly ghost character (inspired by Kiro's mascot) floats on your screen, listens to your requests, and marks/highlights exactly what you need to do.
+**KiroNav** is an AI-powered software navigation assistant that watches your screen and guides you step-by-step through any software task. A friendly ghost character floats on your screen, reads your requests, and teaches you how to use any application.
 
 ## Core Concept
 
 **The Problem**: Millions of people (elderly, non-technical users, new employees) don't know how to use software. Tutorials are text-heavy videos that nobody watches.
 
-**The Solution**: A real-time AI assistant that watches your screen and guides you visually — like having a patient friend looking over your shoulder.
+**The Solution**: A real-time AI assistant that sees your screen and guides you visually — like having a patient friend looking over your shoulder.
 
-**Key Differentiator**: KiroNav does NOT do things FOR the user. It teaches them HOW to do it themselves by highlighting, marking, and explaining each step.
+**Key Differentiator**: KiroNav does NOT do things FOR the user. It teaches them HOW to do it themselves.
 
 ## Hackathon Context
 
 - **Challenge**: RETO 3 — Specialized Agents
-- **Deadline**: July 27, 2026 (5 days from July 22)
+- **Deadline**: July 27, 2026
 - **Team**: Solo developer
 - **Pitch**: "Kiro is the ghost that helps you code. KiroNav is the ghost that helps you USE any software. Same spirit, new superpower."
 
-## User Flow
+## Architecture
 
-### Complete Flow
-
-```
-1. IDLE STATE
-   - Ghost appears transparent, floating in bottom-right corner
-   - Ghost is idle, eyes looking around subtly
-
-2. ACTIVATION
-   - User clicks on ghost
-   - Ghost rises opacity (becomes more visible)
-   - Speech bubble appears: "¿En qué te puedo ayudar?"
-
-3. INPUT
-   - Single click → Keyboard opens for text input
-   - Long press → Microphone activates for voice input
-
-4. PROCESSING
-   - User says/types: "Quiero mandar un mail por Gmail"
-   - Gemini Live receives screen frames via WebSocket
-   - AI analyzes: "User is in Gmail inbox, wants to send email"
-   - AI creates tutorial steps
-
-5. GUIDANCE
-   - Ghost transitions to "watching" state
-   - Step 1: highlight_region on "Compose" button
-   - Speech bubble: "Hacé click en el botón rojo de arriba que dice 'Redactar'"
-   - Ghost speaks the instruction via audio
-
-6. NAVIGATION
-   - User clicks "Compose"
-   - Ghost verifies screen changed
-   - Step 2: highlight_region on "To" field
-   - Continue until task complete
-
-7. COMPLETION
-   - Ghost transitions to "happy" state
-   - Speech bubble: "¡Listo! Mandaste tu primer mail. ¡Felicidades!"
-   - Ghost returns to idle
-```
-
-### Complex Tasks (Todolist)
-
-For tasks with many steps (>10), KiroNav creates a markdown todolist:
-
-```markdown
-## Aprender Figma — Pasos
-
-- [ ] Abrir Figma
-- [ ] Crear nuevo proyecto
-- [ ] Conocer la interfaz (herramientas, paneles)
-- [ ] Dibujar un rectángulo
-- [ ] Agregar texto
-- [ ] Agrupar elementos
-- [ ] Exportar diseño
-- [ ] ...
-```
-
-Each step gets highlighted as the user progresses.
-
-## Technical Architecture
-
-### Stack
+### Current Stack
 
 | Component | Technology | Purpose |
 |---|---|---|
-| UI | Flet (Python) | Cross-platform desktop app |
-| AI | Gemini Live API | Real-time voice + vision |
-| Screen Capture | mss | Capture screen frames at 1 FPS |
-| Voice | pyaudio | Audio input/output |
-| Overlays | Flet Canvas | Render highlights, arrows, text |
-| Character | SVG | Ghost animations |
+| UI | Flet 0.86 (Python) | Cross-platform transparent floating widget |
+| AI | Kiro Gateway → Claude Sonnet 4.5 | Vision + text inference via Kiro models catalog |
+| Screen Capture | mss / grim | Capture screen (Windows/X11/Wayland) |
+| Character | SVG | Ghost with 4 expression states |
 
-### Gemini Live Integration
+### Flow
 
-- **Model**: `gemini-3.1-flash-live-preview`
-- **Protocol**: WebSocket (WSS)
-- **Input**: Screen frames (JPEG, 1 FPS) + Audio (16kHz PCM)
-- **Output**: Audio (24kHz PCM) + Function calls
-- **Tools**: highlight_region, draw_arrow, show_step, show_todolist, complete_tutorial
-
-### Function Calling Tools
-
-```python
-tools = [
-    {
-        "name": "highlight_region",
-        "description": "Highlight a region on screen with colored box",
-        "parameters": {
-            "x": "number (0-1 normalized)",
-            "y": "number (0-1 normalized)",
-            "width": "number (0-1 normalized)",
-            "height": "number (0-1 normalized)",
-            "color": "string (red/blue/green/yellow/orange)",
-            "label": "string (optional)"
-        }
-    },
-    {
-        "name": "draw_arrow",
-        "description": "Draw arrow pointing to location",
-        "parameters": {
-            "from_x": "number", "from_y": "number",
-            "to_x": "number", "to_y": "number",
-            "color": "string"
-        }
-    },
-    {
-        "name": "show_step",
-        "description": "Show step instruction in speech bubble",
-        "parameters": {
-            "step_number": "number",
-            "instruction": "string",
-            "total_steps": "number"
-        }
-    },
-    {
-        "name": "show_todolist",
-        "description": "Show markdown todolist for complex tasks",
-        "parameters": {
-            "title": "string",
-            "steps": "array of strings"
-        }
-    },
-    {
-        "name": "complete_tutorial",
-        "description": "Tutorial completed successfully",
-        "parameters": {
-            "summary": "string"
-        }
-    }
-]
+```
+User clicks ghost → Input dialog appears
+    ↓
+User types request → Screen captured as PNG
+    ↓
+PNG + prompt sent to Kiro Gateway (localhost:8100)
+    ↓
+Model analyzes screenshot → Returns JSON {summary, steps[], done}
+    ↓
+GuidePanel renders steps → User clicks ghost to advance
+    ↓
+Fresh screenshot → Model gives next steps → Until done
 ```
 
-## Ghost Character
+### Design Decisions
 
-### Design Principles
+1. **Gemini Live → Kiro Gateway**: Originally planned for Gemini Live (WebSocket + audio + function calling). Pivoted because: no Windows native CLI support, simpler architecture with HTTP API, uses Kiro tokens directly.
 
-- **No mouth**: All expression through eye movement and transparency
-- **Teal color**: #00D9A3 (distinct from Kiro's purple)
-- **Glow effect**: Subtle glow for visibility
-- **Floating animation**: Gentle up/down movement
+2. **Flet over Electron**: Single Python codebase for desktop + mobile (future). Transparent window, always-on-top, frameless — native feel without JS complexity.
 
-### Animation States
+3. **No overlays (MVP)**: Visual highlights/arrows deferred to post-hackathon. Step-by-step text guidance is sufficient for the demo.
 
-| State | Eyes | Opacity | When |
-|---|---|---|---|
-| **idle** | Open, looking around | 0.7 | No activity |
-| **watching** | Following cursor | 0.85 | Guiding user |
-| **speaking** | Blinking (open/close) | 0.85 | Giving instructions |
-| **happy** | Closed/squinted | 0.9 | Tutorial complete |
-| **thinking** | Closed | 0.75 | Processing |
-
-### SVG Files
-
-- `idle.svg` — Original ghost, static
-- `watch.svg` — Eyes shifted right (following)
-- `speaking.svg` — Eyes as horizontal lines (blinking)
-- `happy.svg` — Eyes slightly closed (satisfaction)
+4. **No audio (MVP)**: Voice I/O deferred. Text input works cross-platform without permission issues.
 
 ## MVP Scope
 
-### IN SCOPE (Must Have)
+### DONE
 
-- [ ] Ghost SVG floating on screen (transparent window)
-- [ ] Gemini Live session (screen + voice)
-- [ ] Function calling tools (highlight, arrow, step, todolist)
-- [ ] Speech bubble (input/output)
-- [ ] Step-by-step navigation
-- [ ] Text + voice input
-- [ ] Basic tutorial flow (send email)
-- [ ] System prompt for KiroNav personality
+- [x] Ghost SVG floating on screen (transparent window)
+- [x] Screen capture (Windows, X11, Wayland)
+- [x] AI vision analysis via Kiro Gateway
+- [x] Speech bubble (text input + AI responses)
+- [x] Step-by-step tutorial guide panel
+- [x] Question answering (describe what's on screen)
+- [x] Multi-turn conversation context
+- [x] Draggable window
+- [x] System prompt for KiroNav personality
 
-### OUT OF SCOPE (Nice to Have)
+### FUTURE (Post-hackathon)
 
-- [ ] Deploy web (desktop only for MVP)
-- [ ] Persistencia de datos
-- [ ] Monetización real (concept only)
-- [ ] Múltiples idiomas
-- [ ] Historial de tutoriales
-- [ ] Complex ghost animations (5 static SVGs sufficient)
-
-## Monetization Concept
-
-### Free Tier
-
-- Simple tutorials (<10 steps)
-- Examples: Send email, change settings, basic navigation
-- Limited to 5 tutorials/day
-
-### Pro Tier
-
-- Complex tutorials (unlimited steps)
-- Examples: Learn Figma, configure server, advanced workflows
-- Unlimited tutorials
-- Token-based pricing
-
-### Enterprise
-
-- Team onboarding
-- Custom integrations
-- Analytics dashboard
-- Priority support
-
-## Timeline
-
-| Day | Date | Deliverable |
-|---|---|---|
-| 1 | Jul 22 | Ghost SVG + Gemini Live session + System prompt |
-| 2 | Jul 23 | Function calling + Overlays + Basic tutorial |
-| 3 | Jul 24 | UI polish + Voice input + Step navigation |
-| 4 | Jul 25 | Real app testing + Prompt tuning + Edge cases |
-| 5 | Jul 26-27 | Demo video + README + Deploy + Submission |
+- [ ] Audio input (speech-to-text)
+- [ ] Visual overlays (highlights, arrows on screen)
+- [ ] Mobile version (Flet build apk/ipa)
+- [ ] Deploy as Kiro product (bundled with gateway)
+- [ ] Tutorial history / persistence
+- [ ] Complex task breakdown (todolist mode)
 
 ## Success Criteria
 
 ### Functional
-
-- [ ] Ghost appears and floats on screen
-- [ ] Gemini Live session connects successfully
-- [ ] Screen frames stream to Gemini
-- [ ] Voice input/output works
-- [ ] Function calls render overlays
-- [ ] Step-by-step guidance works for "send email" scenario
+- [x] Ghost appears and floats on screen
+- [x] Screen capture works
+- [x] AI analyzes screenshots correctly
+- [x] Step-by-step guidance works
+- [x] Questions about screen content answered
 
 ### Demo
-
-- [ ] 5-minute video shows complete workflow
-- [ ] Video includes: problem → solution → tech → monetization
+- [ ] Video showing complete workflow
 - [ ] Repository public on GitHub
 - [ ] README with setup instructions
-
-### Hackathon
-
-- [ ] RETO 3 submission complete
-- [ ] All deliverables submitted
-- [ ] Pitch ready: "Kiro ghost + navigation = KiroNav"

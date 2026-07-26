@@ -1,7 +1,7 @@
 """
 KiroNav - Main Application
 
-AI-powered software navigation assistant using Kiro CLI as backend.
+AI-powered software navigation assistant using Kiro Gateway as backend.
 """
 
 import os
@@ -11,11 +11,10 @@ from typing import Optional
 import flet as ft
 from dotenv import load_dotenv
 
-from core.kiro_cli_backend import KiroCLIBackend, GuideResponse
+from core.kiro_backend import KiroBackend, GuideResponse
 from core.screen_capture import ScreenCapture, ScreenCaptureError
 from ui.ghost import Ghost, GhostState
 from ui.guide_panel import GuidePanel
-from ui.overlay_renderer import OverlayRenderer
 from ui.speech_bubble import SpeechBubble
 
 load_dotenv()
@@ -24,11 +23,11 @@ PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 SYSTEM_PROMPT_PATH = os.path.join(PROMPTS_DIR, "kiro_system_prompt.txt")
 SCREENSHOT_PATH = os.path.join(tempfile.gettempdir(), "kironav_screenshot.png")
 
-# Floating widget size. Tall and narrow so it sits at the edge of the screen.
-WINDOW_WIDTH = 400
-WINDOW_HEIGHT = 640
+# Floating widget size — fixed, always visible
+WINDOW_WIDTH = 340
+WINDOW_HEIGHT = 460
 
-GHOST_SIZE = 120
+GHOST_SIZE = 100
 
 NEXT_STEP_HINT = "Click el fantasma para el siguiente paso"
 
@@ -41,8 +40,7 @@ class KiroNavApp:
     - Ghost character (idle, watch, speak, happy)
     - Speech bubble (user input / AI output)
     - Guide panel (steps)
-    - Overlay renderer (highlights, arrows)
-    - Kiro CLI backend (AI inference)
+    - Kiro Gateway backend (AI inference via HTTP)
     """
 
     def __init__(self):
@@ -50,9 +48,13 @@ class KiroNavApp:
         self.ghost: Optional[Ghost] = None
         self.speech_bubble: Optional[SpeechBubble] = None
         self.guide_panel: Optional[GuidePanel] = None
-        self.overlay_renderer: Optional[OverlayRenderer] = None
 
-        self.backend = KiroCLIBackend()
+        # Backend config from env or defaults
+        model = os.environ.get("KIRO_MODEL", "claude-sonnet-4-5")
+        base_url = os.environ.get("KIRO_GATEWAY_URL", "http://localhost:8100/v1")
+        api_key = os.environ.get("KIRO_API_KEY", "kironav-local-dev")
+
+        self.backend = KiroBackend(model=model, base_url=base_url, api_key=api_key)
         self.screen_capture = ScreenCapture()
 
         self._processing = False
@@ -72,7 +74,7 @@ class KiroNavApp:
         page.title = "KiroNav"
         page.padding = 0
 
-        # Transparent floating widget: no frame, no background, above other windows.
+        # Transparent floating widget — always on top, frameless
         page.bgcolor = ft.Colors.TRANSPARENT
         page.window.bgcolor = ft.Colors.TRANSPARENT
         page.window.frameless = True
@@ -87,49 +89,62 @@ class KiroNavApp:
 
         self._setup_ui()
 
-        print(f"[KiroNav] Ready. Capture backend: {self.screen_capture.backend}")
-        print("[KiroNav] Click the ghost to start.")
+        print(f"[KiroNav] Ready. Model: {self.backend.model}")
+        print(f"[KiroNav] Capture backend: {self.screen_capture.backend}")
 
     def _setup_ui(self):
         """Set up the UI layout."""
         self.ghost = Ghost(size=GHOST_SIZE, initial_state=GhostState.IDLE)
         self.speech_bubble = SpeechBubble(on_submit=self._on_submit)
         self.guide_panel = GuidePanel()
-        self.overlay_renderer = OverlayRenderer(self.page)
 
         ghost_button = ft.Container(
             content=self.ghost,
             width=GHOST_SIZE,
             height=GHOST_SIZE,
             on_click=self._on_ghost_click,
-            tooltip="KiroNav",
+            tooltip="Click para interactuar",
         )
 
-        # Panel and bubble stack above the ghost, all aligned to the right edge.
-        widget_column = ft.Column(
+        # Layout: ghost always visible at top-right, drag area to its left
+        ghost_row = ft.Row(
+            controls=[
+                ft.WindowDragArea(
+                    content=ft.Container(height=50),
+                    expand=True,
+                ),
+                ghost_button,
+            ],
+            alignment=ft.MainAxisAlignment.END,
+            vertical_alignment=ft.CrossAxisAlignment.START,
+            spacing=0,
+        )
+
+        # Content area: guide panel + speech bubble (scrollable if needed)
+        content_area = ft.Column(
             controls=[
                 self.guide_panel,
                 self.speech_bubble,
-                ghost_button,
             ],
-            spacing=10,
-            alignment=ft.MainAxisAlignment.END,
-            horizontal_alignment=ft.CrossAxisAlignment.END,
+            spacing=8,
+            expand=True,
+            scroll=ft.ScrollMode.AUTO,
+        )
+
+        widget_column = ft.Column(
+            controls=[
+                ghost_row,
+                content_area,
+            ],
+            spacing=4,
             expand=True,
         )
 
         self.page.add(
-            ft.Stack(
+            ft.Container(
+                content=widget_column,
+                padding=10,
                 expand=True,
-                controls=[
-                    # Overlay layer sits below the widget so it never steals clicks.
-                    self.overlay_renderer.layer,
-                    ft.Container(
-                        content=widget_column,
-                        padding=10,
-                        expand=True,
-                    ),
-                ],
             )
         )
 
@@ -138,14 +153,16 @@ class KiroNavApp:
     # --------------------------------------------------------------- handlers
 
     async def _on_ghost_click(self, e):
-        """Ghost click: advance the guide if one is active, otherwise ask for input."""
+        """Ghost click: advance steps, toggle input, or dismiss."""
         if self._processing:
             return
 
+        # If there are active steps, advance
         if self._steps and self._current_step < len(self._steps):
             await self._advance_step()
             return
 
+        # Toggle input bubble
         if self.speech_bubble.visible:
             await self.speech_bubble.hide()
             self.ghost.set_state(GhostState.IDLE)
@@ -156,14 +173,12 @@ class KiroNavApp:
             self.speech_bubble.focus_input()
 
     async def _on_submit(self, text: str):
-        """User asked for something: capture the screen and ask Kiro CLI."""
+        """User asked for something: capture screen and ask the model."""
         if self._processing or not text.strip():
             return
 
         self._task = text.strip()
         self._reset_guide()
-
-        # A fresh request starts a fresh conversation.
         self.backend.reset_session()
 
         response = await self._ask(
@@ -182,6 +197,7 @@ class KiroNavApp:
         self._current_step += 1
 
         if self._current_step >= len(self._steps):
+            # All steps done, ask model if there's more
             response = await self._ask(
                 lambda path: self.backend.next_step(
                     screenshot_path=path,
@@ -199,13 +215,7 @@ class KiroNavApp:
 
     async def _ask(self, call) -> Optional[GuideResponse]:
         """
-        Capture the screen, run `call(screenshot_path)` and handle failures.
-
-        Args:
-            call: Coroutine function taking the screenshot path
-
-        Returns:
-            The GuideResponse, or None if the turn failed.
+        Capture the screen, run the call, and handle failures.
         """
         self._processing = True
         self.ghost.set_state(GhostState.WATCH)
@@ -220,7 +230,7 @@ class KiroNavApp:
                 self._show_message(f"No pude ver tu pantalla.\n\n{e}")
                 return None
 
-            print(f"[KiroNav] Screenshot: {path}")
+            print(f"[KiroNav] Screenshot saved: {path}")
             self.ghost.set_state(GhostState.SPEAK)
 
             response = await call(path)
@@ -231,7 +241,7 @@ class KiroNavApp:
 
             return response
 
-        except Exception as e:  # noqa: BLE001 - surface any failure to the user
+        except Exception as e:
             print(f"[KiroNav] Error: {e}")
             self._show_message(f"Error: {e}")
             return None
@@ -241,7 +251,7 @@ class KiroNavApp:
             self.page.update()
 
     def _render_response(self, response: GuideResponse):
-        """Show a guide response in the panel, or as text if it has no steps."""
+        """Show a guide response in the panel."""
         if response.done:
             self._reset_guide()
             self.ghost.set_state(GhostState.HAPPY)

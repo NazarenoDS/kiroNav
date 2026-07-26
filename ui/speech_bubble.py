@@ -25,8 +25,7 @@ class SpeechBubble(ft.Container):
 
     def __init__(
         self,
-        width: int = 350,
-        height: int = 180,
+        width: int = 320,
         on_submit: Optional[Callable] = None,
     ):
         """
@@ -34,7 +33,6 @@ class SpeechBubble(ft.Container):
 
         Args:
             width: Bubble width
-            height: Bubble height
             on_submit: Async callback invoked with the submitted text
         """
         self._on_submit = on_submit
@@ -84,7 +82,6 @@ class SpeechBubble(ft.Container):
             size=13,
             color=ft.Colors.WHITE,
             selectable=True,
-            expand=True,
         )
 
         # Held as an attribute so visibility is never toggled by list index.
@@ -92,10 +89,10 @@ class SpeechBubble(ft.Container):
             content=ft.Column(
                 controls=[self._response_text],
                 scroll=ft.ScrollMode.AUTO,
-                expand=True,
+                tight=True,
             ),
             visible=False,
-            expand=True,
+            max_height=200,
         )
 
         # Loading indicator
@@ -109,19 +106,18 @@ class SpeechBubble(ft.Container):
 
         super().__init__(
             width=width,
-            height=height,
             bgcolor=ft.Colors.with_opacity(0.92, "#1A1A2E"),
             border_radius=20,
             border=ft.Border.all(2, ft.Colors.with_opacity(0.3, ft.Colors.WHITE)),
-            padding=15,
+            padding=12,
             content=ft.Column(
                 controls=[
                     self._input_row,
                     self._response_container,
                     self._loading,
                 ],
-                spacing=10,
-                expand=True,
+                spacing=8,
+                tight=True,
             ),
             opacity=0,
             animate_opacity=FADE_MS,
