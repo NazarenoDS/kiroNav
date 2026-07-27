@@ -167,7 +167,7 @@ kiroNav/
 - **Challenge**: RETO 3 — Specialized Agents
 - **Pitch**: "Kiro is the ghost that helps you code. KiroNav is the ghost that helps you USE any software."
 - **Built with**: Kiro IDE + Kiro Models Catalog + Flet
-- **Landing page**: [web/](./web/index.html)
+- **Landing page**: [docs/](./docs/index.html)
 
 ## Troubleshooting
 
