@@ -57,7 +57,7 @@ A teal ghost inspired by Kiro's mascot. No mouth — all expression through eyes
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/your-username/kiroNav.git
+git clone https://github.com/NazarenoDS/kiroNav.git
 cd kiroNav
 
 python -m venv venv
@@ -167,6 +167,7 @@ kiroNav/
 - **Challenge**: RETO 3 — Specialized Agents
 - **Pitch**: "Kiro is the ghost that helps you code. KiroNav is the ghost that helps you USE any software."
 - **Built with**: Kiro IDE + Kiro Models Catalog + Flet
+- **Landing page**: [web/](./web/index.html)
 
 ## Troubleshooting
 
