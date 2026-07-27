@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KiroNav — The ghost that helps you USE any software</title>
+    <meta name="description" content="KiroNav watches your screen and guides you step-by-step through any software task. Built on Kiro's models catalog.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M18.8 0H5.2A5.2 5.2 0 000 5.2v13.6A5.2 5.2 0 005.2 24h13.6a5.2 5.2 0 005.2-5.2V5.2A5.2 5.2 0 0018.8 0z' fill='%239046FF'/%3E%3Cpath d='M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z' fill='%23fff'/%3E%3Cpath d='M12.722 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.218-.97a.61.61 0 01.537-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005zm2.703 0c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.219-.97a.61.61 0 01.536-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z' fill='%23000'/%3E%3C/svg%3E">
+</head>
+<body>
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="https://kiro.dev" class="nav-brand">
+                <svg height="24" viewBox="0 0 24 24" width="24"><path d="M18.8 0H5.2A5.2 5.2 0 000 5.2v13.6A5.2 5.2 0 005.2 24h13.6a5.2 5.2 0 005.2-5.2V5.2A5.2 5.2 0 0018.8 0z" fill="#9046FF"/><path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="#fff"/><path d="M12.722 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.218-.97a.61.61 0 01.537-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005zm2.703 0c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.219-.97a.61.61 0 01.536-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#000"/></svg>
+                <span class="nav-sep">/</span>
+                <span class="nav-product">KiroNav</span>
+            </a>
+            <div class="nav-links">
+                <a href="https://kiro.dev/cli/">CLI</a>
+                <a href="https://kiro.dev/mobile/">Mobile</a>
+                <a href="https://kiro.dev/pricing/">Pricing</a>
+                <a href="https://github.com/NazarenoDS/kiroNav" class="nav-cta">GitHub</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+        <div class="hero-inner">
+            <span class="badge-pill">Kiro Hackathon — RETO 3</span>
+            <h1>The ghost that helps you<br><span class="gradient-text">USE any software</span></h1>
+            <p class="hero-sub">Watches your screen. Guides you step by step. Never does it for you.</p>
+            <div class="hero-btns">
+                <a href="https://github.com/NazarenoDS/kiroNav" class="btn btn-primary">Get Started</a>
+                <a href="#features" class="btn btn-ghost">How it works ↓</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Hero Visual: Ghost animado + panel de pasos -->
+    <section class="hero-demo">
+        <div class="hero-demo-inner">
+            <div class="ghost-stage" id="ghost-stage">
+                <svg class="hero-ghost" id="hero-ghost" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="#fff"/>
+                    <path class="eye-left" d="M12.722 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.218-.97a.61.61 0 01.537-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#1a1a2e"/>
+                    <path class="eye-right" d="M15.425 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.219-.97a.61.61 0 01.536-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#1a1a2e"/>
+                </svg>
+            </div>
+            <div class="steps-panel">
+                <div class="sp-title">Sending an email</div>
+                <div class="sp-step done"><span>✓</span> Click "Compose"</div>
+                <div class="sp-step active"><span>2</span> Type recipient in "To"</div>
+                <div class="sp-step pending"><span>3</span> Write your subject</div>
+                <div class="sp-step pending"><span>4</span> Click "Send"</div>
+                <div class="sp-hint">Auto-advancing...</div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features" id="features">
+
+        <!-- Section 1: Flow vertical a la izquierda, texto a la derecha -->
+        <div class="feat feat-row">
+            <div class="flow-vertical">
+                <div class="fv-node">
+                    <div class="fv-icon"><svg viewBox="5 4 14 18" width="32" height="32"><path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="#fff"/><ellipse cx="13" cy="10.2" rx="0.5" ry="0.9" fill="#1a1a2e"/><ellipse cx="15.4" cy="10.2" rx="0.5" ry="0.9" fill="#1a1a2e"/></svg></div>
+                    <div class="fv-text"><strong>You ask</strong><span>Tell the ghost what you need</span></div>
+                </div>
+                <div class="fv-line"></div>
+                <div class="fv-node">
+                    <div class="fv-icon">🖼️</div>
+                    <div class="fv-text"><strong>Captures screen</strong><span>Takes a screenshot of your current view</span></div>
+                </div>
+                <div class="fv-line"></div>
+                <div class="fv-node">
+                    <div class="fv-icon">🧠</div>
+                    <div class="fv-text"><strong>AI analyzes</strong><span>Identifies buttons, text, icons on screen</span></div>
+                </div>
+                <div class="fv-line"></div>
+                <div class="fv-node">
+                    <div class="fv-icon">📋</div>
+                    <div class="fv-text"><strong>Guides you</strong><span>Shows you step by step what to do</span></div>
+                </div>
+                <div class="fv-line"></div>
+                <div class="fv-node">
+                    <div class="fv-icon"><svg viewBox="5 4 14 18" width="32" height="32"><path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="#fff"/><ellipse cx="13" cy="10.2" rx="0.5" ry="0.9" fill="#1a1a2e"/><ellipse cx="15.4" cy="10.2" rx="0.5" ry="0.9" fill="#1a1a2e"/></svg></div>
+                    <div class="fv-text"><strong>Watches you do it</strong><span>The ghost checks your progress</span></div>
+                </div>
+                <div class="fv-line"></div>
+                <div class="fv-node">
+                    <div class="fv-icon">🖼️</div>
+                    <div class="fv-text"><strong>Verifies</strong><span>Re-captures screen to confirm</span></div>
+                </div>
+                <div class="fv-line"></div>
+                <div class="fv-branch">
+                    <div class="fv-branch-done"><span>✅</span> Done → Celebrates!</div>
+                    <div class="fv-branch-loop"><span>🔄</span> Not done → Back to analyze</div>
+                </div>
+            </div>
+            <div class="feat-text">
+                <h2>A live loop that guides until you're done</h2>
+                <p>Tell the ghost what you need. It captures your screen, thinks, gives you a step, watches you do it, verifies — and loops back if you need more help.</p>
+            </div>
+        </div>
+
+        <div class="feat">
+            <div class="feat-visual">
+                <div class="scene-dialog">
+                    <div class="sd-ghost"><svg viewBox="0 0 24 24" width="100" height="100"><path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="#fff"/><path d="M12.722 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.218-.97a.61.61 0 01.537-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#1a1a2e"/><path d="M15.425 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.219-.97a.61.61 0 01.536-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#1a1a2e"/></svg></div>
+                    <div class="sd-panel">
+                        <div class="sd-title">What do you need help with?</div>
+                        <div class="sd-input">I want to send an email...</div>
+                        <div class="sd-btn">Go!</div>
+                    </div>
+                </div>
+            </div>
+            <div class="feat-text">
+                <h2>Ask anything, get a personalized tutorial</h2>
+                <p>Tell the ghost what you need. It looks at your screen, creates a custom step-by-step guide based on what's actually visible. No generic instructions.</p>
+            </div>
+        </div>
+
+        <div class="feat">
+            <div class="feat-visual">
+                <div class="scene-steps">
+                    <div class="ss-progress"><div class="ss-bar"></div></div>
+                    <div class="ss-step done">✓ Opened Gmail</div>
+                    <div class="ss-step done">✓ Clicked Compose</div>
+                    <div class="ss-step active">→ Typing recipient email...</div>
+                    <div class="ss-step pending">○ Write your message</div>
+                    <div class="ss-step pending">○ Click Send</div>
+                    <div class="ss-watcher">⚡ Auto-advancing — watching your screen</div>
+                </div>
+            </div>
+            <div class="feat-text">
+                <h2>Advances when you complete each step</h2>
+                <p>No clicking "next" manually. KiroNav re-checks your screen every few seconds and moves forward automatically. If you're stuck, it offers help.</p>
+            </div>
+        </div>
+
+        <div class="feat">
+            <div class="feat-visual">
+                <div class="scene-models">
+                    <div class="sm-item active"><span class="sm-dot"></span>Claude Sonnet 4.5 <em>— Vision</em></div>
+                    <div class="sm-item"><span class="sm-dot off"></span>Claude Haiku 4.5 <em>— Fast</em></div>
+                    <div class="sm-item"><span class="sm-dot off"></span>GPT-5.6 Terra <em>— Balanced</em></div>
+                    <div class="sm-item"><span class="sm-dot off"></span>DeepSeek V3.2 <em>— Open MoE</em></div>
+                    <div class="sm-footer">Uses your existing Kiro account & tokens</div>
+                </div>
+            </div>
+            <div class="feat-text">
+                <h2>Powered by Kiro's models catalog</h2>
+                <p>Same account, same tokens you use for code. Claude Sonnet with vision understands your screen. Switch models anytime.</p>
+            </div>
+        </div>
+
+    </section>
+
+    <!-- Platforms -->
+    <section class="platforms">
+        <div class="container">
+            <div class="plat-grid">
+                <div class="plat-card">
+                    <div class="plat-ghost-float"><svg viewBox="0 0 24 24" width="42" height="42"><path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="#fff"/><path d="M12.722 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.218-.97a.61.61 0 01.537-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#1a1a2e"/><path d="M15.425 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.219-.97a.61.61 0 01.536-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#1a1a2e"/></svg></div>
+                    <h3>Desktop</h3>
+                    <p>Transparent floating widget. Sees your screen live.</p>
+                    <span class="plat-badge on">Available now</span>
+                </div>
+                <div class="plat-card">
+                    <div class="plat-ghost-float dim"><svg viewBox="0 0 24 24" width="42" height="42"><path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="rgba(255,255,255,0.4)"/><path d="M12.722 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.218-.97a.61.61 0 01.537-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#1a1a2e"/><path d="M15.425 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.219-.97a.61.61 0 01.536-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#1a1a2e"/></svg></div>
+                    <h3>Mobile</h3>
+                    <p>Floating overlay + screen sharing on your phone.</p>
+                    <span class="plat-badge">Coming soon</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="faq">
+        <div class="container">
+            <h2>FAQ</h2>
+            <div class="faq-list">
+                <details class="faq-item"><summary>What is KiroNav?</summary><p>KiroNav is a new tool for the Kiro ecosystem that extends AI assistance beyond code. While Kiro helps developers write software, KiroNav helps everyone else USE software — with real-time, step-by-step visual guidance powered by the same AI models.</p></details>
+                <details class="faq-item"><summary>Who is it for?</summary><p>Anyone who struggles with technology: elderly users, non-technical employees, people onboarding into new tools, or anyone who'd rather have a patient guide than watch a 20-minute tutorial video. KiroNav opens a massive market for Kiro beyond developers.</p></details>
+                <details class="faq-item"><summary>How is this different from tutorials or Clippy?</summary><p>Tutorials are generic — they don't know what's on YOUR screen. KiroNav sees your actual screen in real time, identifies your exact context, and gives you personalized instructions. It adapts if you're stuck and advances automatically when you succeed.</p></details>
+                <details class="faq-item"><summary>Does it take control of my computer?</summary><p>Never. KiroNav only observes and guides. It tells you what to click — you do it yourself. The philosophy is teaching, not automating. The user learns and becomes independent.</p></details>
+                <details class="faq-item"><summary>What's the vision for Kiro?</summary><p>Kiro already owns the developer experience. KiroNav extends that to the entire tech market — every person who uses a computer but doesn't know how to do something. It's a natural product expansion: same brand, same AI, new audience of millions.</p></details>
+                <details class="faq-item"><summary>What AI model does it use?</summary><p>Claude Sonnet 4.5 with vision capability through the Kiro models catalog. Same tokens, same account, same infrastructure. No additional API keys or services needed.</p></details>
+                <details class="faq-item"><summary>Does it work on mobile?</summary><p>Desktop is available now (Windows, macOS, Linux) as a floating transparent widget. Mobile (Android) with floating overlay and screen sharing permission is the next milestone — same experience, on your phone.</p></details>
+                <details class="faq-item"><summary>How does it fit into Kiro's product line?</summary><p>Kiro IDE helps you code. Kiro CLI helps you in the terminal. Kiro Web helps you remotely. KiroNav helps you USE any software. It's the consumer-facing arm of Kiro — the ghost that follows you everywhere.</p></details>
+            </div>
+        </div>
+    </section>
+
+    <section class="final-cta">
+        <div class="container">
+            <div class="final-cta-card">
+                <h2>Let the ghost guide you<br>through any software.</h2>
+                <a href="https://github.com/NazarenoDS/kiroNav" class="btn-cta">Try KiroNav ↗</a>
+                <p class="cta-sub">Open source. Uses your Kiro account tokens.</p>
+                <div class="cta-ghost">
+                    <svg viewBox="5 4 14 18" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="#fff"/>
+                        <ellipse class="cta-eye cta-eye-left" cx="13" cy="10.2" rx="0.5" ry="0.9" fill="#1a1a2e"/>
+                        <ellipse class="cta-eye cta-eye-right" cx="15.4" cy="10.2" rx="0.5" ry="0.9" fill="#1a1a2e"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container footer-inner">
+            <div class="footer-brand">
+                <svg height="18" viewBox="0 0 24 24" width="18"><path d="M18.8 0H5.2A5.2 5.2 0 000 5.2v13.6A5.2 5.2 0 005.2 24h13.6a5.2 5.2 0 005.2-5.2V5.2A5.2 5.2 0 0018.8 0z" fill="#9046FF"/><path d="M7.97 16.376c-1.644 3.642 1.86 4.556 4.443 2.424.76 2.39 3.608.607 4.631-1.247 2.251-4.084 1.342-8.249 1.108-9.108-1.6-5.859-9.6-5.869-10.976.03-.323 1.033-.328 2.206-.507 3.423-.09.617-.16 1.009-.393 1.655-.139.373-.323.7-.62 1.257-.458.865-.264 2.53 2.101 1.665l.224-.1z" fill="#fff"/><path d="M12.722 10.985c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.218-.97a.61.61 0 01.537-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005zm2.703 0c-.656 0-.755-.785-.755-1.252 0-.423.074-.756.219-.97a.61.61 0 01.536-.283c.229 0 .428.095.567.289.159.218.243.55.243.964 0 .785-.303 1.252-.805 1.252h-.005z" fill="#000"/></svg>
+                <span>KiroNav — Built on Kiro</span>
+            </div>
+            <div class="footer-links">
+                <a href="https://kiro.dev/">Home</a>
+                <a href="https://kiro.dev/docs/">Docs</a>
+                <a href="https://kiro.dev/pricing/">Pricing</a>
+                <a href="https://kiro.dev/site-terms/">Terms</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
