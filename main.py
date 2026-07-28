@@ -118,13 +118,6 @@ class KiroNavApp:
             height=GHOST_SIZE,
             on_click=self._on_ghost_click,
             tooltip="Click para interactuar",
-            border_radius=50,
-            border=ft.Border.all(2, "#9046FF"),
-            shadow=ft.BoxShadow(
-                spread_radius=2,
-                blur_radius=12,
-                color=ft.Colors.with_opacity(0.4, "#9046FF"),
-            ),
         )
 
         # Ghost at top-right, drag area to its left
