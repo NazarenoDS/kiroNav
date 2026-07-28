@@ -4,6 +4,10 @@
 
 KiroNav is an AI-powered software navigation assistant built for the Kiro Hackathon (RETO 3 - Specialized Agents). It sees your screen, understands what's on it, and guides you step-by-step through any task.
 
+## Demo
+
+🎬 [Watch the demo video](https://youtube.com/your-demo-link) — See KiroNav guiding a user through sending an email in Gmail, step by step.
+
 ## What is KiroNav?
 
 A friendly ghost floats on your screen. You tell it what you need help with. It looks at your screen, figures out where you are, and tells you exactly what to click, type, or do next. Step by step. Like a patient friend sitting next to you.
@@ -162,11 +166,20 @@ kiroNav/
 └──────────────────────────────────────┘
 ```
 
+## Infrastructure
+
+KiroNav's AI runs entirely on AWS:
+
+- **Inference**: AWS Bedrock (us-east-1, N. Virginia) via the Kiro models catalog
+- **Authentication**: AWS SSO (Builder ID) — same login as Kiro IDE
+- **Models**: Claude Sonnet 4.5 with vision capability, hosted on Bedrock
+- **No external APIs**: Everything flows through AWS infrastructure
+
 ## Hackathon
 
 - **Challenge**: RETO 3 — Specialized Agents
 - **Pitch**: "Kiro is the ghost that helps you code. KiroNav is the ghost that helps you USE any software."
-- **Built with**: Kiro IDE + Kiro Models Catalog + Flet
+- **Built with**: Kiro IDE + Kiro Models Catalog (AWS Bedrock) + Flet
 - **Landing page**: [docs/](./docs/index.html)
 
 ## Troubleshooting
