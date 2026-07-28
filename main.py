@@ -24,7 +24,6 @@ load_dotenv()
 PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 SYSTEM_PROMPT_PATH = os.path.join(PROMPTS_DIR, "kiro_system_prompt.txt")
 SCREENSHOT_PATH = os.path.join(tempfile.gettempdir(), "kironav_screenshot.png")
-ICON_PATH = os.path.join(os.path.dirname(__file__), "assets", "icons", "kironav.png")
 
 # Floating widget size
 WINDOW_WIDTH = 340
@@ -85,7 +84,7 @@ class KiroNavApp:
 
         page.title = "KiroNav"
         page.padding = 0
-        page.window.icon = ICON_PATH
+        page.window.icon = "icons/kironav.png"
 
         # Transparent floating widget — always on top, frameless
         page.bgcolor = ft.Colors.TRANSPARENT
